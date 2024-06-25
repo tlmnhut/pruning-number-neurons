@@ -2,6 +2,8 @@ import numpy as np
 from scipy.io import loadmat, savemat
 from scipy.stats import pearsonr
 from tqdm import tqdm
+import joblib
+import multiprocessing
 
 from utils import upper_tri
 
@@ -21,10 +23,12 @@ def remove_node_n_eval(rdm_human, acts):
                        removing the respective node.
     """
     rdm_human_trim = upper_tri(rdm_human)
-    rsa_scores = []
-    for i in tqdm(range(acts.shape[1])):
-        rdm_acts = 1 - np.corrcoef(np.delete(acts, i, axis=1)) # remove i column, then compute the RDM
-        rsa_scores.append(pearsonr(rdm_human_trim, upper_tri(rdm_acts))[0])
+    def _repeat_func(node_idx):
+        rdm_acts = 1 - np.corrcoef(np.delete(acts, node_idx, axis=1))  # remove i column, then compute the RDM
+        return pearsonr(rdm_human_trim, upper_tri(rdm_acts))[0]
+
+    rsa_scores = joblib.Parallel(n_jobs=NUM_CPU_USE, prefer='processes')(joblib.delayed(_repeat_func)(i)
+                                                                       for i in tqdm(range(acts.shape[1])))
     return np.array(rsa_scores)
 
 
@@ -44,16 +48,20 @@ def select_forward(rdm_human, acts, rank_node):
                        top `i` nodes.
     """
     rdm_human_trim = upper_tri(rdm_human)
-    rsa_scores = []
-    for i in tqdm(range(2, acts.shape[1]+1)):
-        rdm_acts = 1 - np.corrcoef(acts[:, rank_node[:i]]) # select top i columns, then compute the RDM
-        rsa_scores.append(pearsonr(rdm_human_trim, upper_tri(rdm_acts))[0])
+    def _repeat_func(node_idx):
+        rdm_acts = 1 - np.corrcoef(acts[:, rank_node[:node_idx]])  # select top i columns, then compute the RDM
+        return pearsonr(rdm_human_trim, upper_tri(rdm_acts))[0]
+
+    rsa_scores = joblib.Parallel(n_jobs=NUM_CPU_USE, prefer='processes')(joblib.delayed(_repeat_func)(i)
+                                                                       for i in tqdm(range(2, acts.shape[1]+1)))
     return np.array(rsa_scores)
 
 
 if __name__ == '__main__':
-    rdm_mri = loadmat('./data/MRI-RDM.mat', simplify_cells=True)['RDM']
-    rdm_ips12 = rdm_mri['IPS12']
+    brain_area = 'IPS345'
+
+    NUM_CPU_USE = int(multiprocessing.cpu_count() * 0.5)
+    rdm_mri = loadmat('./data/MRI-RDM.mat', simplify_cells=True)['RDM'][brain_area]
 
     network_layers = ['IT', 'V4', 'V2', 'V1']
     for layer in network_layers:
@@ -63,10 +71,10 @@ if __name__ == '__main__':
         acts_avg = np.array([np.mean(acts[i:i + 100], axis=0) for i in range(0, 3200, 100)])
 
         # evaluate the importance of each node
-        score_each_node = remove_node_n_eval(rdm_human=rdm_ips12, acts=acts_avg)
+        score_each_node = remove_node_n_eval(rdm_human=rdm_mri, acts=acts_avg)
 
         rdm_acts_full = 1 - np.corrcoef(acts_avg) # rdm of the full activations
-        score_full = pearsonr(upper_tri(rdm_ips12), upper_tri(rdm_acts_full))[0]
+        score_full = pearsonr(upper_tri(rdm_mri), upper_tri(rdm_acts_full))[0]
 
         # compute the deviation when remove each node
         # an important node when removed will largely decrease the original RSA
@@ -77,16 +85,17 @@ if __name__ == '__main__':
         rank_deviation = np.argsort(score_deviation)[::-1]
 
         # sequentially select nodes and compute the RSA
-        score_forward = select_forward(rdm_human=rdm_ips12, acts=acts_avg, rank_node=rank_deviation)
+        score_forward = select_forward(rdm_human=rdm_mri, acts=acts_avg, rank_node=rank_deviation)
 
         res = {'score_full': np.array([score_full]),
                'score_each_node': score_each_node,
                'score_sfs': score_forward,
               }
-        savemat(f'./res/selection/forward/ips12_{layer}_squared.mat', res)
+        savemat(f'./res/selection/forward/{brain_area}_{layer}.mat', res)
 
-    # res_IT = loadmat('./res/selection/forward/ips12_IT.mat')
-    # score_deviation = res_IT['score_full'] - res_IT['score_each_node']
-    # rank_deviation = np.argsort(score_deviation)[::-1]
-    # selected_nodes = rank_deviation[0][:np.argmax(res_IT['score_sfs'])]
-    # np.argmax(res_IT['score_sfs'])
+    # # read the result
+    # res = loadmat('./res/selection/forward/IPS12_IT.mat')
+    # score_deviation = res['score_full'] - res['score_each_node']
+    # rank_deviation = np.argsort(score_deviation)[::-1] # sort from highest to lowest
+    # selected_nodes = rank_deviation[0][:np.argmax(res['score_sfs'])]
+    # max_position = np.argmax(res['score_sfs'])
