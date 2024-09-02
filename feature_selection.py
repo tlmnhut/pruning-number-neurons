@@ -58,7 +58,7 @@ def select_forward(rdm_human, acts, rank_node):
 
 
 if __name__ == '__main__':
-    brain_area = 'IPS345'
+    brain_area = 'VO2'
 
     NUM_CPU_USE = int(multiprocessing.cpu_count() * 0.5)
     rdm_mri = loadmat('./data/MRI-RDM.mat', simplify_cells=True)['RDM'][brain_area]
@@ -94,8 +94,12 @@ if __name__ == '__main__':
         savemat(f'./res/selection/forward/{brain_area}_{layer}.mat', res)
 
     # # read the result
-    # res = loadmat('./res/selection/forward/IPS12_IT.mat')
-    # score_deviation = res['score_full'] - res['score_each_node']
-    # rank_deviation = np.argsort(score_deviation)[::-1] # sort from highest to lowest
-    # selected_nodes = rank_deviation[0][:np.argmax(res['score_sfs'])]
-    # max_position = np.argmax(res['score_sfs'])
+    # network_layers = ['V1', 'V2', 'V4', 'IT']
+    # brain_area = 'V2'
+    # for layer in network_layers:
+    #     res = loadmat(f'./res/selection/forward/{brain_area}_{layer}.mat')
+    #     score_deviation = res['score_full'] - res['score_each_node']
+    #     rank_deviation = np.argsort(score_deviation)[::-1] # sort from highest to lowest
+    #     selected_nodes = rank_deviation[0][:np.argmax(res['score_sfs'])]
+    #     max_position = np.argmax(res['score_sfs'])
+    #     print(layer, round(res['score_full'][0][0], 2), len(selected_nodes), round(np.max(res['score_sfs']), 2))
